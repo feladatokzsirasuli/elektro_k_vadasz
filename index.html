@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Képlet Vadászat</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+        body { background-color: #1a1a2e; color: #ffffff; font-family: sans-serif; overflow: hidden; width: 100vw; height: 100vh; }
+        #ui-container { position: absolute; top: 15px; left: 15px; right: 15px; z-index: 10; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+        .ui-row { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        #score-board { font-size: 24px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        #active-name-display { font-size: 18px; color: #00a8ff; font-weight: bold; }
+        #progress-bar-container { width: 100%; height: 16px; background-color: #16213e; border-radius: 8px; border: 2px solid #0f3460; overflow: hidden; }
+        #progress-bar { width: 100%; height: 100%; background-color: #e94560; transition: width 0.1s linear; }
+        .formula { position: absolute; padding: 12px 25px; background: #16213e; border: 2px solid #0f3460; border-radius: 8px; font-size: 24px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5); white-space: nowrap; animation: fadeIn 0.3s ease; transition: transform 0.1s ease; z-index: 5; pointer-events: auto; }
+        .formula:hover { transform: scale(1.08); }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .screen-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 52, 96, 0.98); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; padding: 20px; text-align: center; }
+        .screen-overlay h1 { font-size: 44px; color: #e94560; margin-bottom: 15px; }
+        .screen-overlay p { font-size: 18px; max-width: 600px; line-height: 1.5; margin-bottom: 20px; color: #e2e2e2; }
+        .big-name-container { background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 15px; margin-bottom: 20px; width: 100%; max-width: 350px; pointer-events: auto; }
+        .big-name-container label { display: block; font-size: 16px; color: #00a8ff; font-weight: bold; margin-bottom: 8px; }
+        .big-name-input { width: 100%; padding: 12px; font-size: 18px; border-radius: 5px; border: 2px solid #0f3460; background: #1a1a2e; color: white; text-align: center; font-weight: bold; pointer-events: auto; }
+        .btn { padding: 15px 40px; font-size: 18px; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; width: 280px; text-align: center; margin-top: 5px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); pointer-events: auto; }
+        #start-game-btn { background-color: #4ecc71; }
+        #submit-score-btn { background-color: #e94560; }
+        #cert-btn { background-color: #00a8ff; }
+        #restart-btn { background-color: #4ecc71; }
+        .leaderboard-box { background: #16213e; border: 2px solid #0f3460; border-radius: 8px; padding: 15px; width: 100%; max-width: 400px; margin-bottom: 15px; }
+        .leaderboard-box h3 { color: #00a8ff; margin-bottom: 10px; font-size: 22px; }
+        .leaderboard-table { width: 100%; border-collapse: collapse; font-size: 18px; }
+        .leaderboard-table td { padding: 8px; text-align: left; }
+        .leaderboard-table tr:nth-child(even) { background: rgba(255,255,255,0.05); }
+        .leaderboard-table td.pos { font-weight: bold; color: #e94560; width: 40px; }
+        .leaderboard-table td.pts { text-align: right; font-weight: bold; color: #4ecc71; }
+    </style>
+
+    <!-- Google Firebase Kapcsolat (Ezek kellenek a felhőhöz) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+<body>
+
+    <div id="ui-container">
+        <div class="ui-row">
+            <div id="score-board">Pontszám: <span id="score">0</span></div>
+            <div id="active-name-display"></div>
+        </div>
+        <div id="progress-bar-container"><div id="progress-bar"></div></div>
+    </div>
+
+    <div id="start-screen" class="screen-overlay">
+        <h1>Képlet Vadászat</h1>
+        <p>Kattints a helyes fizika képletekre! A rossz képletek pont- és időlevonással járnak.</p>
+        <div class="big-name-container">
+            <label for="start-name-field">Kérlek, add meg a neved az indításhoz:</label>
+            <input type="text" id="start-name-field" class="big-name-input" placeholder="Ide írd a neved...">
+        </div>
+        <button id="start-game-btn" class="btn" onclick="initiateGame()">Játék indítása</button>
+    </div>
+
+    <div id="game-over-screen" class="screen-overlay" style="display: none;">
+        <h1>Játék Vége!</h1>
+        <p>Elért pontszámod: <b id="final-score" style="color: #4ecc71; font-size: 28px;">0</b> pont</p>
+        <button id="submit-score-btn" class="btn" onclick="manualSubmit()">Pontszám elküldése</button>
+        <div class="leaderboard-box" style="margin-top: 15px;">
+            <h3>🏆 Firebase Top 5</h3>
+            <table class="leaderboard-table"><tbody id="leaderboard-body"></tbody></table>
+        </div>
+        <!-- <button id="cert-btn" class="btn" onclick="generateCertificate()">Igazolás letöltése</button> --!>
+        <button id="restart-btn" class="btn" onclick="startGame()">Új játék</button>
+    </div>
+
+    <script>
+        // --- Firebase Inicializálás ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyC4ypKsFziwbyOQ87Sb-1PrrIZcvLf1_xQ",
+          authDomain: "://firebaseapp.com",
+          databaseURL: "https://fizikadomino-default-rtdb.europe-west1.firebasedatabase.app",
+          projectId: "fizikadomino",
+          storageBucket: "fizikadomino.firebasestorage.app",
+          messagingSenderId: "272119065201",
+          appId: "1:272119065201:web:c6bdc223fd9a61394f49d0",
+          measurementId: "G-6PNNLQV1GH"
+        };
+        
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+        
+        const formulas = [
+            { text: "I = Q / t", isCorrect: true }, { text: "P = U · I", isCorrect: true },
+            { text: "U = I · R", isCorrect: true }, { text: "W = U · I · t ", isCorrect: true },
+            { text: "W = P · t", isCorrect: true }, { text: "R = U / I", isCorrect: true },
+            { text: "I = U / R", isCorrect: true },
+            { text: "I = Q · t", isCorrect: false }, { text: "R = U · I", isCorrect: false },
+            { text: "P = U / I", isCorrect: false }, { text: "W = P / T", isCorrect: false },
+            { text: "I = U · R", isCorrect: false }, { text: "Q = I / t", isCorrect: false },
+            { text: "U = P · I", isCorrect: false }
+        ];
+
+        let score = 0, timeLeft = 100, gameInterval, formulaSpawnInterval, isGameActive = false, totalGameTimeTicks = 0, globalPlayerName = "";
+
+        function initiateGame() {
+            globalPlayerName = document.getElementById("start-name-field").value.trim();
+            if(globalPlayerName === "") globalPlayerName = "Névtelen Tanuló";
+            document.getElementById("active-name-display").innerText = globalPlayerName;
+            document.getElementById("start-screen").style.display = "none";
+            startGame();
+        }
+
+        function startGame() {
+            score = 0; timeLeft = 100; totalGameTimeTicks = 0; isGameActive = true;
+            document.getElementById("score").innerText = score;
+            document.getElementById("game-over-screen").style.display = "none";
+            document.getElementById("leaderboard-body").innerHTML = "<tr><td colspan='3' style='text-align:center;'>Toplista betöltése...</td></tr>";
+            document.querySelectorAll('.formula').forEach(e => e.remove());
+            clearInterval(gameInterval); clearInterval(formulaSpawnInterval);
+            gameInterval = setInterval(updateTime, 100);
+            formulaSpawnInterval = setInterval(spawnFormula, 1200);
+        }
+
+        function updateTime() {
+            if (!isGameActive) return;
+            totalGameTimeTicks++;
+            timeLeft -= (score >= 10 ? 0.6 : 0.4);
+            document.getElementById("progress-bar").style.width = timeLeft + "%";
+            if (timeLeft <= 0) endGame();
+        }
+
+        function spawnFormula() {
+            if (!isGameActive) return;
+            const data = formulas[Math.floor(Math.random() * formulas.length)];
+            const el = document.createElement("div");
+            el.classList.add("formula"); el.innerText = data.text;
+            el.style.left = (Math.random() * (window.innerWidth - 260)) + "px";
+            el.style.top = (Math.random() * (window.innerHeight - 120) + 70) + "px";
+            el.addEventListener("click", () => {
+                if (!isGameActive) return;
+                if (data.isCorrect) { score++; timeLeft += 8; } else { score--; timeLeft -= 12; }
+                document.getElementById("score").innerText = score; el.remove();
+            });
+            document.body.appendChild(el);
+            setTimeout(() => { if (el.parentNode) el.remove(); }, Math.random() * 2000 + 5000);
+        }
+
+        function endGame() {
+            isGameActive = false; clearInterval(gameInterval); clearInterval(formulaSpawnInterval);
+            document.getElementById("final-score").innerText = score;
+            document.getElementById("game-over-screen").style.display = "flex";
+            document.querySelectorAll('.formula').forEach(e => e.remove());
+            document.getElementById("submit-score-btn").style.display = (score <= 0) ? "none" : "block";
+            
+            // Ha nem küldhet be pontot (0 vagy az alatti pontszám), akkor csak lekérjük a toplistát
+            if (score <= 0) fetchLeaderboard();
+        }
+
+        function manualSubmit() {
+            document.getElementById("submit-score-btn").style.display = "none";
+            sendData(globalPlayerName, score);
+        }
+
+        // --- Firebase Adatbeküldés Módosítás ---
+        function sendData(name, pts) {
+            document.getElementById("leaderboard-body").innerHTML = "<tr><td colspan='3' style='text-align:center;'>Mentés a felhőbe...</td></tr>";
+            
+            // Új bejegyzés létrehozása a Firebase adatbázisban "kepletvadasz_toplista" néven
+            const toplistRef = database.ref('elektro_kepletvadasz');
+            const newRecordRef = toplistRef.push();
+            
+            newRecordRef.set({
+                name: name,
+                score: pts,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            }).then(() => {
+                // Sikeres mentés után azonnal lekérjük a friss toplistát
+                fetchLeaderboard();
+            }).catch((error) => {
+                console.error("Firebase hiba mentéskor: ", error);
+                document.getElementById("leaderboard-body").innerHTML = "<tr><td colspan='3' style='text-align:center; color:#e94560;'>Hiba a mentés során!</td></tr>";
+            });
+        }
+
+        // --- Firebase Adatlekérés Módosítás (Top 5 szűrés) ---
+        function fetchLeaderboard() {
+            // Lekérjük a pontszám szerint rendezett utolsó 5 rekordot (mivel alapértelmezetten csak növekvő lehet)
+            database.ref('elektro_kepletvadasz')
+                .orderByChild('score')
+                .limitToLast(5)
+                .once('value')
+                .then((snapshot) => {
+                    const list = [];
+                    snapshot.forEach((childSnapshot) => {
+                        list.push(childSnapshot.val());
+                    });
+                    
+                    // Megfordítjuk a tömböt, hogy a legnagyobb pontszámú legyen a legelső (descending sorrend)
+                    list.reverse();
+                    
+                    // Átadjuk a te meglévő táblázat-megjelenítő függvényednek
+                    renderTable(list);
+                }).catch((error) => {
+                    console.error("Firebase hiba letöltéskor: ", error);
+                    document.getElementById("leaderboard-body").innerHTML = "<tr><td colspan='3' style='text-align:center; color:#e94560;'>Nem sikerült betölteni a toplistát.</td></tr>";
+                });
+        }
+
+        // --- Táblázat Generálása (Megtartva a meglévő designt és struktúrát) ---
+        function renderTable(list) {
+            let html = "";
+            for (let i = 0; i < 5; i++) { 
+                html += "<tr><td class='pos'>" + (i+1) + ".</td><td>" + (list[i] ? list[i].name : "---") + "</td><td class='pts'>" + (list[i] ? list[i].score + " p" : "-") + "</td></tr>"; 
+            }
+            document.getElementById("leaderboard-body").innerHTML = html;
+        }
+
+        async function sha256(msg) {
+            const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+            return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function generateCertificate() {
+            let name = globalPlayerName || "Tanuló";
+            const n = new Date();
+            const date = n.getFullYear() + ". " + 
+                         String(n.getMonth() + 1).padStart(2, '0') + ". " + 
+                         String(n.getDate()).padStart(2, '0') + ". " + 
+                         String(n.getHours()).padStart(2, '0') + ":" + 
+                         String(n.getMinutes()).padStart(2, '0') + ":" + 
+                         String(n.getSeconds()).padStart(2, '0');
+            
+            const sec = Math.round(totalGameTimeTicks / 10);
+            
+            const raw = `${name}|${date}|${score}/10|${sec}|Fizika2024`;
+            const code = await sha256(raw);
+            
+            const text = `=== IGAZOLÁS ===
+Név: ${name}
+Időpont: ${date}
+Eredmény: ${score}/10
+Idő: ${sec} mp
+----------------
+KÓD:
+${code}
+================`;
+
+            const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+            const link = document.createElement("a"); 
+            link.href = URL.createObjectURL(blob); 
+            link.download = `Igazolas_${name.replace(/\s+/g, '_')}.txt`; 
+            link.click();
+        }
+    </script>
+</body>
+</html>
